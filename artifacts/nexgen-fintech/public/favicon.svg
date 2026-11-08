@@ -1,0 +1,17 @@
+<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="180" height="180" rx="36" fill="#0F172A"/>
+  <!-- K vertical stroke -->
+  <line x1="46" y1="34" x2="46" y2="146" stroke="white" stroke-width="22" stroke-linecap="round"/>
+  <!-- K upper diagonal -->
+  <line x1="46" y1="90" x2="142" y2="34" stroke="white" stroke-width="22" stroke-linecap="round"/>
+  <!-- K lower diagonal — white-to-cyan flow -->
+  <defs>
+    <linearGradient id="kflow" x1="46" y1="90" x2="142" y2="146" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="white"/>
+      <stop offset="100%" stop-color="#00D2FF"/>
+    </linearGradient>
+  </defs>
+  <path d="M46 90 Q88 112 142 146" stroke="url(#kflow)" stroke-width="22" stroke-linecap="round" fill="none"/>
+  <!-- Wave accent -->
+  <path d="M34 161 Q72 149 108 161 Q132 169 148 161" stroke="#00D2FF" stroke-width="7" stroke-linecap="round" fill="none" opacity="0.65"/>
+</svg>

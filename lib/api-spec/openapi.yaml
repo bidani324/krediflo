@@ -1,0 +1,1208 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: NexGen Fintech - Loan Aggregator API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: loans
+    description: Loan application operations
+  - name: applicants
+    description: Applicant operations
+  - name: documents
+    description: Document vault operations
+  - name: admin
+    description: Admin operations
+  - name: calculators
+    description: Financial calculator operations
+paths:
+  /admin/quick-check/bsa:
+    post:
+      operationId: analyseBankStatementQuickCheck
+      tags: [admin]
+      summary: Analyse a text-based PDF bank statement locally (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BankStatementUpload"
+      responses:
+        "200":
+          description: Completed analysis with generated XLSX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankAnalysisResponse"
+        "422":
+          description: Scanned, encrypted or unsupported statement
+        "413":
+          description: PDF exceeds 10 MB
+        "503":
+          description: Analyser busy or unavailable
+  /finpass/bsa/upload:
+    post:
+      operationId: analyseApplicantBankStatement
+      tags: [documents]
+      summary: Analyse a PDF and store structured results for an owned applicant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ApplicantBankStatementUpload"
+      responses:
+        "200":
+          description: Completed and saved analysis; omitted fileData uses the stored AA PDF
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankAnalysisResponse"
+        "403":
+          description: Applicant belongs to another user
+        "422":
+          description: No statement or unsupported layout
+        "413":
+          description: PDF exceeds 10 MB
+        "503":
+          description: Analyser busy or unavailable
+  /finpass/bsa/result:
+    post:
+      operationId: getApplicantBankAnalysis
+      tags: [documents]
+      summary: Read a previously completed in-house analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [applicantId]
+              properties:
+                applicantId:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: Stored report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankAnalysisResponse"
+  /finpass/bsa/document/{docId}/download-result:
+    get:
+      operationId: downloadBankAnalysisWorkbook
+      tags: [documents]
+      summary: Download Monthly Analysis and EMI Details XLSX for an owned document
+      parameters:
+        - in: path
+          name: docId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Generated or legacy Excel workbook
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /loans:
+    get:
+      operationId: listLoans
+      tags: [loans]
+      summary: List all loan applications
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, submitted, docs_procured, under_review, sent_to_bank, approved, rejected]
+        - name: loanType
+          in: query
+          schema:
+            type: string
+            enum: [lap, home, personal, business]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of loan applications
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanListResponse"
+    post:
+      operationId: createLoan
+      tags: [loans]
+      summary: Create a new loan application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLoanBody"
+      responses:
+        "201":
+          description: Loan created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Loan"
+
+  /loans/{id}:
+    get:
+      operationId: getLoan
+      tags: [loans]
+      summary: Get a loan application by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Loan application details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanWithApplicants"
+    patch:
+      operationId: updateLoan
+      tags: [loans]
+      summary: Update a loan application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLoanBody"
+      responses:
+        "200":
+          description: Updated loan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Loan"
+
+  /loans/{id}/status:
+    patch:
+      operationId: updateLoanStatus
+      tags: [loans]
+      summary: Update loan application status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLoanStatusBody"
+      responses:
+        "200":
+          description: Updated loan status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Loan"
+
+  /loans/{id}/applicants:
+    post:
+      operationId: addApplicant
+      tags: [applicants]
+      summary: Add an applicant (co-applicant) to a loan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApplicantBody"
+      responses:
+        "201":
+          description: Applicant added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Applicant"
+
+  /applicants/{id}:
+    get:
+      operationId: getApplicant
+      tags: [applicants]
+      summary: Get applicant by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Applicant details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Applicant"
+    patch:
+      operationId: updateApplicant
+      tags: [applicants]
+      summary: Update applicant details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateApplicantBody"
+      responses:
+        "200":
+          description: Updated applicant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Applicant"
+    delete:
+      operationId: deleteApplicant
+      tags: [applicants]
+      summary: Remove a co-applicant
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Applicant deleted
+
+  /applicants/{id}/fetch-docs:
+    post:
+      operationId: fetchApplicantDocs
+      tags: [documents]
+      summary: Trigger document fetch (CIBIL, PAN, bank statements)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Fetch initiated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocFetchResponse"
+
+  /applicants/{id}/documents:
+    get:
+      operationId: getApplicantDocuments
+      tags: [documents]
+      summary: Get all documents for an applicant
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Applicant documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Document"
+
+  /loans/{id}/export:
+    get:
+      operationId: exportLoanPackage
+      tags: [admin]
+      summary: Export bank-ready package for a loan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Export info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportResponse"
+
+  /admin/dashboard:
+    get:
+      operationId: getAdminDashboard
+      tags: [admin]
+      summary: Get admin dashboard summary
+      responses:
+        "200":
+          description: Admin dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDashboard"
+
+  /admin/loans:
+    get:
+      operationId: adminListLoans
+      tags: [admin]
+      summary: Admin view of all loans with full details
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Admin loan list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminLoanListResponse"
+
+  /admin/create-application:
+    post:
+      operationId: adminCreateApplication
+      tags: [admin]
+      summary: Admin manually creates a loan application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminCreateApplicationBody"
+      responses:
+        "201":
+          description: Application created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanWithApplicants"
+
+  /stats/overview:
+    get:
+      operationId: getStatsOverview
+      tags: [admin]
+      summary: Get pipeline stats and overview
+      responses:
+        "200":
+          description: Stats overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsOverview"
+
+  /stats/loan-types:
+    get:
+      operationId: getLoanTypeStats
+      tags: [admin]
+      summary: Get loan application breakdown by type
+      responses:
+        "200":
+          description: Loan type stats
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LoanTypeStat"
+
+  /stats/recent-activity:
+    get:
+      operationId: getRecentActivity
+      tags: [admin]
+      summary: Get recent application activity feed
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Recent activity
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
+  /calculators/emi:
+    post:
+      operationId: calculateEmi
+      tags: [calculators]
+      summary: Calculate EMI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmiCalculatorBody"
+      responses:
+        "200":
+          description: EMI calculation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmiResult"
+
+  /calculators/balance-transfer:
+    post:
+      operationId: calculateBalanceTransfer
+      tags: [calculators]
+      summary: Calculate balance transfer ROI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BalanceTransferBody"
+      responses:
+        "200":
+          description: Balance transfer result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceTransferResult"
+
+components:
+  schemas:
+    BankStatementUpload:
+      type: object
+      required: [fileData]
+      properties:
+        fileData:
+          type: string
+          description: Base64-encoded PDF, at most 10 MB decoded
+        fileName:
+          type: string
+    ApplicantBankStatementUpload:
+      type: object
+      required: [applicantId]
+      properties:
+        applicantId:
+          type: integer
+          minimum: 1
+        fileData:
+          type: string
+          description: Base64 PDF; omit to analyse the stored AA PDF
+        fileName:
+          type: string
+    BankAnalysisResponse:
+      type: object
+      required: [ok, analysis]
+      properties:
+        ok:
+          type: boolean
+        analysis:
+          $ref: "#/components/schemas/BankAnalysis"
+        docId:
+          type: integer
+        message:
+          type: string
+        xlsxBase64:
+          type: string
+        xlsxFileName:
+          type: string
+    BankTransaction:
+      type: object
+      required: [date, description, debit, credit, balance]
+      properties:
+        date:
+          type: string
+        description:
+          type: string
+        debit:
+          type: number
+        credit:
+          type: number
+        balance:
+          type: number
+    BankMonthlyAnalysis:
+      type: object
+      required: [month, totalCredit, totalDebit, averageBalance, creditCount, debitCount]
+      properties:
+        month:
+          type: string
+        totalCredit:
+          type: number
+        totalDebit:
+          type: number
+        averageBalance:
+          type: number
+          description: Mean transaction closing balance, not daily average
+        creditCount:
+          type: integer
+        debitCount:
+          type: integer
+    BankAnalysis:
+      type: object
+      required: [version, summary, monthlyAnalysis, emiDetails, transactions, warnings]
+      properties:
+        version:
+          type: integer
+          enum: [1]
+        summary:
+          type: object
+          required: [transactionCount, periodStart, periodEnd, totalCredit, totalDebit, emiCount]
+          properties:
+            transactionCount:
+              type: integer
+            periodStart:
+              type: string
+            periodEnd:
+              type: string
+            totalCredit:
+              type: number
+            totalDebit:
+              type: number
+            emiCount:
+              type: integer
+        monthlyAnalysis:
+          type: array
+          items:
+            $ref: "#/components/schemas/BankMonthlyAnalysis"
+        emiDetails:
+          type: array
+          items:
+            $ref: "#/components/schemas/BankTransaction"
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/BankTransaction"
+        warnings:
+          type: array
+          items:
+            type: string
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Loan:
+      type: object
+      properties:
+        id:
+          type: integer
+        loanType:
+          type: string
+          enum: [lap, home, personal, business]
+        loanAmount:
+          type: number
+        tenure:
+          type: integer
+        interestRate:
+          type: number
+          nullable: true
+        purpose:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [draft, submitted, docs_procured, under_review, sent_to_bank, approved, rejected]
+        propertyValue:
+          type: number
+          nullable: true
+        propertyAddress:
+          type: string
+          nullable: true
+        annualIncome:
+          type: number
+          nullable: true
+        employmentType:
+          type: string
+          nullable: true
+        companyName:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - loanType
+        - loanAmount
+        - tenure
+        - status
+        - createdAt
+        - updatedAt
+
+    LoanWithApplicants:
+      allOf:
+        - $ref: "#/components/schemas/Loan"
+        - type: object
+          properties:
+            applicants:
+              type: array
+              items:
+                $ref: "#/components/schemas/Applicant"
+          required:
+            - applicants
+
+    Applicant:
+      type: object
+      properties:
+        id:
+          type: integer
+        loanId:
+          type: integer
+        applicantType:
+          type: string
+          enum: [primary, co-applicant]
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        mobile:
+          type: string
+        pan:
+          type: string
+        dateOfBirth:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        cibilScore:
+          type: integer
+          nullable: true
+        cibilStatus:
+          type: string
+          nullable: true
+        panVerified:
+          type: boolean
+        mcaVerified:
+          type: boolean
+        bankStatementsStatus:
+          type: string
+          nullable: true
+        docsLastFetchedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - loanId
+        - applicantType
+        - firstName
+        - lastName
+        - email
+        - mobile
+        - pan
+        - panVerified
+        - mcaVerified
+        - createdAt
+
+    Document:
+      type: object
+      properties:
+        id:
+          type: integer
+        applicantId:
+          type: integer
+        docType:
+          type: string
+          enum: [cibil_report, pan_verification, mca_data, bank_statement, form_16, itr]
+        status:
+          type: string
+          enum: [pending, fetching, fetched, failed]
+        data:
+          type: object
+          nullable: true
+        fetchedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - applicantId
+        - docType
+        - status
+        - createdAt
+
+    CreateLoanBody:
+      type: object
+      properties:
+        loanType:
+          type: string
+          enum: [lap, home, personal, business]
+        loanAmount:
+          type: number
+        tenure:
+          type: integer
+        interestRate:
+          type: number
+        purpose:
+          type: string
+        primaryApplicant:
+          $ref: "#/components/schemas/CreateApplicantBody"
+      required:
+        - loanType
+        - loanAmount
+        - tenure
+        - primaryApplicant
+
+    UpdateLoanBody:
+      type: object
+      properties:
+        loanAmount:
+          type: number
+        tenure:
+          type: integer
+        interestRate:
+          type: number
+        purpose:
+          type: string
+        propertyValue:
+          type: number
+        propertyAddress:
+          type: string
+        annualIncome:
+          type: number
+        employmentType:
+          type: string
+        companyName:
+          type: string
+        notes:
+          type: string
+
+    UpdateLoanStatusBody:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [draft, submitted, docs_procured, under_review, sent_to_bank, approved, rejected]
+      required:
+        - status
+
+    CreateApplicantBody:
+      type: object
+      properties:
+        applicantType:
+          type: string
+          enum: [primary, co-applicant]
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        mobile:
+          type: string
+        pan:
+          type: string
+        dateOfBirth:
+          type: string
+        address:
+          type: string
+      required:
+        - applicantType
+        - firstName
+        - lastName
+        - email
+        - mobile
+        - pan
+
+    UpdateApplicantBody:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        mobile:
+          type: string
+        dateOfBirth:
+          type: string
+        address:
+          type: string
+
+    DocFetchResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        docsTriggered:
+          type: array
+          items:
+            type: string
+      required:
+        - success
+        - message
+        - docsTriggered
+
+    ExportResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        exportUrl:
+          type: string
+          nullable: true
+        exportedAt:
+          type: string
+          format: date-time
+      required:
+        - success
+        - message
+        - exportedAt
+
+    AdminDashboard:
+      type: object
+      properties:
+        totalApplications:
+          type: integer
+        activeApplications:
+          type: integer
+        totalLoanValue:
+          type: number
+        approvedCount:
+          type: integer
+        pendingDocsCount:
+          type: integer
+        recentApplications:
+          type: array
+          items:
+            $ref: "#/components/schemas/Loan"
+        statusBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              status:
+                type: string
+              count:
+                type: integer
+            required:
+              - status
+              - count
+      required:
+        - totalApplications
+        - activeApplications
+        - totalLoanValue
+        - approvedCount
+        - pendingDocsCount
+        - recentApplications
+        - statusBreakdown
+
+    AdminLoanListResponse:
+      type: object
+      properties:
+        loans:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoanWithApplicants"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required:
+        - loans
+        - total
+        - page
+        - limit
+
+    LoanListResponse:
+      type: object
+      properties:
+        loans:
+          type: array
+          items:
+            $ref: "#/components/schemas/Loan"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required:
+        - loans
+        - total
+        - page
+        - limit
+
+    AdminCreateApplicationBody:
+      type: object
+      properties:
+        loanType:
+          type: string
+          enum: [lap, home, personal, business]
+        loanAmount:
+          type: number
+        tenure:
+          type: integer
+        primaryApplicant:
+          $ref: "#/components/schemas/CreateApplicantBody"
+        fetchDocs:
+          type: boolean
+          default: false
+      required:
+        - loanType
+        - loanAmount
+        - tenure
+        - primaryApplicant
+
+    StatsOverview:
+      type: object
+      properties:
+        totalLoans:
+          type: integer
+        totalValue:
+          type: number
+        averageLoanAmount:
+          type: number
+        approvalRate:
+          type: number
+        monthlyGrowth:
+          type: number
+        docsCompletionRate:
+          type: number
+      required:
+        - totalLoans
+        - totalValue
+        - averageLoanAmount
+        - approvalRate
+        - monthlyGrowth
+        - docsCompletionRate
+
+    LoanTypeStat:
+      type: object
+      properties:
+        loanType:
+          type: string
+        count:
+          type: integer
+        totalValue:
+          type: number
+        percentage:
+          type: number
+      required:
+        - loanType
+        - count
+        - totalValue
+        - percentage
+
+    ActivityItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        loanId:
+          type: integer
+        applicantName:
+          type: string
+        loanType:
+          type: string
+        action:
+          type: string
+        status:
+          type: string
+        amount:
+          type: number
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - id
+        - loanId
+        - applicantName
+        - loanType
+        - action
+        - status
+        - amount
+        - timestamp
+
+    EmiCalculatorBody:
+      type: object
+      properties:
+        principal:
+          type: number
+        interestRate:
+          type: number
+        tenureMonths:
+          type: integer
+      required:
+        - principal
+        - interestRate
+        - tenureMonths
+
+    EmiResult:
+      type: object
+      properties:
+        emi:
+          type: number
+        totalPayable:
+          type: number
+        totalInterest:
+          type: number
+        principal:
+          type: number
+        schedule:
+          type: array
+          items:
+            type: object
+            properties:
+              month:
+                type: integer
+              payment:
+                type: number
+              principal:
+                type: number
+              interest:
+                type: number
+              balance:
+                type: number
+            required:
+              - month
+              - payment
+              - principal
+              - interest
+              - balance
+      required:
+        - emi
+        - totalPayable
+        - totalInterest
+        - principal
+
+    BalanceTransferBody:
+      type: object
+      properties:
+        currentPrincipal:
+          type: number
+        currentRate:
+          type: number
+        newRate:
+          type: number
+        remainingTenureMonths:
+          type: integer
+        processingFee:
+          type: number
+      required:
+        - currentPrincipal
+        - currentRate
+        - newRate
+        - remainingTenureMonths
+
+    BalanceTransferResult:
+      type: object
+      properties:
+        currentEmi:
+          type: number
+        newEmi:
+          type: number
+        currentTotalPayable:
+          type: number
+        newTotalPayable:
+          type: number
+        savings:
+          type: number
+        netSavingsAfterFees:
+          type: number
+        breakEvenMonths:
+          type: integer
+        worthTransferring:
+          type: boolean
+      required:
+        - currentEmi
+        - newEmi
+        - currentTotalPayable
+        - newTotalPayable
+        - savings
+        - netSavingsAfterFees
+        - breakEvenMonths
+        - worthTransferring

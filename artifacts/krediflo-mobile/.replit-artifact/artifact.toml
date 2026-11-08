@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/mobile/"
+title = "Krediflo Mobile"
+description = "A native mobile companion app for Krediflo loan applicants. Lets customers browse loan products, check eligibility, submit loan applications, and track application and document status on the go, reusing the existing Krediflo API server and session auth."
+version = "1.0.0"
+id = "artifacts/krediflo-mobile"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/mobile/" ]
+localPort = 23304
+
+[services.development]
+run = "pnpm --filter @workspace/krediflo-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/krediflo-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/krediflo-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "23304"
+BASE_PATH = "/mobile/"
